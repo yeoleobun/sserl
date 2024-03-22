@@ -1,14 +1,14 @@
 {application, common,
- [{description, "An OTP library"},
+ [{description, "common libraries"},
   {vsn, "0.1.0"},
   {registered, []},
   {applications,
    [kernel,
-    stdlib
-   ]},
+    stdlib,
+    crypto
+  ]},
   {env,[]},
-  {modules, [common]},
-
+  {modules, [cipher]},
   {licenses, ["Apache-2.0"]},
   {links, []}
  ]}.

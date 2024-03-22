@@ -1,26 +1,30 @@
 -module(cipher).
 
--export([encrypt/2]).
--export([init/2]).
--export([derive_key/2]).
--export([decrypt/2]).
--export([inc/1]).
--export([add/2]).
+-export([init/2, encrypt/2, decrypt/2]).
 
--record(state0,
+-include_lib("kernel/include/logger.hrl").
+
+-record(init,
         {cipher :: cipher(), master_key :: binary(), key_size :: non_neg_integer()}).
--record(state1, {cipher :: cipher(), sub_key :: binary(), nonce :: binary()}).
--record(satte2,
+-record(chunk, {cipher :: cipher(), sub_key :: binary(), nonce :: binary()}).
+-record(payload,
         {cipher :: cipher(),
          sub_key :: binary(),
          nonce :: binary(),
          length :: non_neg_integer()}).
 
 -type cipher() :: aes_128_gcm | aes_256_gcm | chacha20_poly1305.
+-type state() :: #init{} | #chunk{}.
+
+-export_type([state/0, cipher/0]).
 
 -define(INFO, "ss-subkey").
--define(KEY_SIZE, #{chacha20_poly1305 => 32}). % key size = salt size
--define(NONCE_SIZE, 12). % iv
+% key size = salt size, in bytes.
+-define(KEY_SIZE,
+        #{chacha20_poly1305 => 32,
+          aes_256_gcm => 32,
+          aes_128_gcm => 16}).
+-define(NONCE_SIZE, 12).
 -define(TAG_SIZE, 16).
 -define(LENGTH_SIZE, 2).
 -define(MAX_SIZE, 16#3fff).
@@ -29,35 +33,33 @@
 -spec init(Cipher, Pass) -> State
     when Cipher :: cipher(),
          Pass :: string(),
-         State :: #state0{} | boolean().
+         State :: #init{}.
 init(Cipher, Pass) ->
     case ?KEY_SIZE of
         #{Cipher := Len} ->
             Key = derive_key(Pass, Len),
-            {state0, Cipher, Key, Len};
+            {init, Cipher, Key, Len};
         #{} ->
-            exit("cipher not supported")
+            ?LOG_ERROR("cipher: ~p not supported", [Cipher]),
+            exit(normal)
     end.
 
 -spec encrypt(State, Input) -> {Output, State}
-    when State :: #state0{} | #state1{},
+    when State :: state(),
          Input :: binary(),
          Output :: iolist().
 encrypt(State, Input) ->
     encrypt(State, Input, []).
 
--spec encrypt(State, Input, Acc) -> {Output, State}
-    when State :: #state0{} | #state1{},
-         Input :: binary(),
-         Acc :: iolist(),
-         Output :: iolist().
 encrypt(State, <<>>, Acc) ->
     {lists:reverse(Acc), State};
-encrypt({state0, Cipher, MasterKey, KeySize}, Input, []) ->
-    Salt = crypto:strong_rand_bytes(KeySize), % key size = salt size
+encrypt({init, Cipher, MasterKey, KeySize}, Input, []) ->
+    % key size = salt size
+    Salt = crypto:strong_rand_bytes(KeySize),
     SubKey = hkdf_sha1(MasterKey, Salt, KeySize),
-    encrypt({state1, Cipher, SubKey, ?ZERO}, Input, [Salt]);
-encrypt({state1, Cipher, SubKey, Nonce} = State, Input, Acc) ->
+    encrypt({chunk, Cipher, SubKey, ?ZERO}, Input, [Salt]);
+encrypt({chunk, Cipher, SubKey, Nonce} = State, Input, Acc) ->
+    % max size 0x3FFF
     Size = byte_size(Input) band ?MAX_SIZE,
     {Cur, Rest} = split_binary(Input, Size),
     SizeBin = <<Size:?LENGTH_SIZE/unit:8>>,
@@ -65,39 +67,49 @@ encrypt({state1, Cipher, SubKey, Nonce} = State, Input, Acc) ->
         crypto:crypto_one_time_aead(Cipher, SubKey, Nonce, SizeBin, <<>>, true),
     {Payload, PayloadTag} =
         crypto:crypto_one_time_aead(Cipher, SubKey, inc(Nonce), Cur, <<>>, true),
-    Bcc = [PayloadTag, Payload, LengthTag, Length] ++ Acc, %concat from backward
-    encrypt(State#state1{nonce = iinc(Nonce)}, Rest, Bcc).
+    %concat from backward
+    Bcc = [PayloadTag, Payload, LengthTag, Length] ++ Acc,
+    encrypt(State#chunk{nonce = iinc(Nonce)}, Rest, Bcc).
 
--spec decrypt(State, Input) -> {Output, Rest, State}
-    when State :: #state0{} | #state1{} | #satte2{},
+-spec decrypt(State, Input) -> Result
+    when State :: state(),
          Input :: binary(),
          Output :: iolist(),
-         Rest :: binary().
+         Rest :: binary(),
+         Result :: {Output, Rest, State} | error.
 decrypt(State, Input) ->
     decrypt(State, Input, []).
 
-decrypt({state0, Cipher, MasterKey, KeySize}, Input, [])
-    when byte_size(Input) >= KeySize ->
+% extract salt
+decrypt({init, Cipher, MasterKey, KeySize}, Input, []) when byte_size(Input) >= KeySize ->
     {Salt, Rest} = split_binary(Input, KeySize),
     SubKey = hkdf_sha1(MasterKey, Salt, KeySize),
-    decrypt({state1, Cipher, SubKey, ?ZERO}, Rest, []);
-decrypt({state1, Cipher, SubKey, Nonce}, Input, Output)
-    when byte_size(Input) >= ?LENGTH_SIZE + ?TAG_SIZE ->
-    <<Data:?LENGTH_SIZE/binary, Tag:?TAG_SIZE/binary, Rest/binary>> = Input,
-    <<Length:?LENGTH_SIZE/unit:8>> =
-        crypto:crypto_one_time_aead(Cipher, SubKey, Nonce, Data, <<>>, Tag, false),
-    decrypt({state2, Cipher, SubKey, inc(Nonce), Length}, Rest, Output);
-decrypt({state2, Cipher, SubKey, Nonce, Length}, Input, Output)
+    decrypt({chunk, Cipher, SubKey, ?ZERO}, Rest, []);
+% decrypt length
+decrypt({chunk, Cipher, SubKey, Nonce},
+        <<Data:?LENGTH_SIZE/binary, Tag:?TAG_SIZE/binary, Rest/binary>>,
+        Acc) ->
+    case crypto:crypto_one_time_aead(Cipher, SubKey, Nonce, Data, <<>>, Tag, false) of
+        error ->
+            error;
+        <<Length:?LENGTH_SIZE/unit:8>> ->
+            decrypt({payload, Cipher, SubKey, inc(Nonce), Length}, Rest, Acc)
+    end;
+decrypt({payload, Cipher, SubKey, Nonce, Length}, Input, Acc)
     when byte_size(Input) >= Length + ?TAG_SIZE ->
     <<Data:Length/binary, Tag:?TAG_SIZE/binary, Rest/binary>> = Input,
-    Payload = crypto:crypto_one_time_aead(Cipher, SubKey, Nonce, Data, <<>>, Tag, false),
-    decrypt({state1, Cipher, SubKey, inc(Nonce)}, Rest, [Payload | Output]);
-decrypt(State, Input, Output) ->
-    {lists:reverse(Output), Input, State}.
+    case crypto:crypto_one_time_aead(Cipher, SubKey, Nonce, Data, <<>>, Tag, false) of
+        error ->
+            error;
+        Payload ->
+            decrypt({chunk, Cipher, SubKey, inc(Nonce)}, Rest, [Payload | Acc])
+    end;
+decrypt(State, Input, Acc) ->
+    {lists:reverse(Acc), Input, State}.
 
 -spec derive_key(Pass, Len) -> Key
-    when Pass :: [char()],
-         Len :: integer(),
+    when Pass :: string(),
+         Len :: non_neg_integer(),
          Key :: binary().
 derive_key(Pass, Len) ->
     derive_key(list_to_binary(Pass), <<>>, Len).
@@ -112,11 +124,11 @@ derive_key(Pass, Pre, _) ->
 -spec hkdf_sha1(Key, Salt, Len) -> SubKey
     when Key :: binary(),
          Salt :: binary(),
-         Len :: integer(),
+         Len :: non_neg_integer(),
          SubKey :: binary().
 hkdf_sha1(Key, Salt, Len) ->
-    Prk = crypto:mac(hmac, sha, Salt, Key), % extract
-    expand(Prk, <<>>, 1, Len).
+    % extract
+    expand(crypto:mac(hmac, sha, Salt, Key), <<>>, 1, Len).
 
 expand(Prk, Pre, I, Len) when Len > 16 ->
     Cur = crypto:mac(hmac, sha, Prk, <<Pre/binary, ?INFO, I>>),
@@ -125,14 +137,11 @@ expand(Prk, Pre, I, Len) when Len > 16 ->
 expand(Prk, Pre, I, _) ->
     crypto:mac(hmac, sha, Prk, <<Pre/binary, ?INFO, I>>).
 
--spec inc(binary()) -> binary().
 inc(I) ->
     add(I, 1).
 
--spec iinc(binary()) -> binary().
 iinc(I) ->
     add(I, 2).
 
--spec add(binary(), non_neg_integer()) -> binary().
 add(<<I:12/little-unit:8>>, J) ->
     <<(I + J):12/little-unit:8>>.
