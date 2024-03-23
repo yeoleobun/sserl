@@ -22,14 +22,14 @@ start_link(Port, Password, Method) ->
 %%                  shutdown => shutdown(), % optional
 %%                  type => worker(),       % optional
 %%                  modules => modules()}   % optional
-init([Port, Password, Method]) ->
+init(Args) ->
     SupFlags =
         #{strategy => one_for_one,
           intensity => 1,
           period => 5},
     ChildSpecs =
         [#{id => acceptor,
-           start => {acceptor, start, [Port, Password, Method]},
+           start => {acceptor, start, Args},
            shutdown => brutal_kill}],
     {ok, {SupFlags, ChildSpecs}}.
 

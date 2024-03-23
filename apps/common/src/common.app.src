@@ -8,7 +8,7 @@
     crypto
   ]},
   {env,[]},
-  {modules, [cipher]},
+  {modules, [common,cipher]},
   {licenses, ["Apache-2.0"]},
   {links, []}
  ]}.
