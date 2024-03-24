@@ -48,9 +48,14 @@ handshake(Client, Init, RemoteAddr, RemotePort) ->
     {ok, <<5, 1, 0, Dst/binary>>} = gen_tcp:recv(Client, 0), % CONNECT only
     ok = gen_tcp:send(Client, <<5, 0, 0, Dst/binary>>),      % always succeeded, use DST.ADDR
     {Addr,Port,<<>>} = common:parse_address(Dst),
-    ?LOG_DEBUG(#{addr => Addr,port => Port}),
     {ok, Payload} = gen_tcp:recv(Client, 0),
-    {ok, Remote} = gen_tcp:connect(RemoteAddr, RemotePort, ?SOCK_OPTS, timer:seconds(1)),
-    {Packet, State} = cipher:encrypt(Init, <<Dst/binary, Payload/binary>>),
-    ok = gen_tcp:send(Remote, Packet),
-    common:relay(Init, Remote, State, Client).
+    case gen_tcp:connect(RemoteAddr, RemotePort, ?SOCK_OPTS, timer:seconds(2)) of
+        {ok,Remote} ->
+            ?LOG_DEBUG(#{addr => Addr,port => Port}),
+            {Packet, State} = cipher:encrypt(Init, <<Dst/binary, Payload/binary>>),
+            ok = gen_tcp:send(Remote, Packet),
+            common:relay(Init, Remote, State, Client);
+        {error,Reason} ->
+            ?LOG_ERROR("remote is not reachable ~w~n",[Reason]),
+            error
+    end.

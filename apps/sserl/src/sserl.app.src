@@ -1,5 +1,5 @@
 {application, sserl,
- [{description, "An OTP application"},
+ [{description, "ss-server"},
   {vsn, "0.1.0"},
   {registered, []},
   {mod, {sserl_app, []}},
