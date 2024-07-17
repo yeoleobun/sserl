@@ -1,0 +1,16 @@
+[
+    {kernel,[
+        {logger_level,${LOG_LEVEL:-info}},
+        {logger,[
+            {handler, default, logger_std_h, 
+                #{formatter => 
+                    {logger_formatter, #{
+                        legacy_header => false,
+                        single_line => true}}}}]}]},
+    {client,[
+        {address, ${ADDR:-localhost}},
+        {port, ${PORT:-8388}},
+        {local_port, ${LOCAL_PORT:-1080}},
+        {password, ${PASSWORD:-"barfoo!"}},
+        {method, ${METHOD:-chacha20_poly1305}}]}].
+  

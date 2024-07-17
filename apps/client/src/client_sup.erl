@@ -11,10 +11,9 @@
 
 -export([init/1]).
 
--define(SERVER, ?MODULE).
 
 start_link(Method, Password, LocalPort, RemoteAddr, RemotePort) ->
-    supervisor:start_link({local, ?SERVER}, ?MODULE, [Method, Password, LocalPort, RemoteAddr, RemotePort]).
+    supervisor:start_link(?MODULE, [Method, Password, LocalPort, RemoteAddr, RemotePort]).
 
 %% sup_flags() = #{strategy => strategy(),         % optional
 %%                 intensity => non_neg_integer(), % optional
@@ -32,7 +31,7 @@ init(Args) ->
           period => 5},
     ChildSpecs =
         [#{id => acceptor,
-           start => {socks5_server, start, Args},
+           start => {socks5_server, init, Args},
            shutdown => brutal_kill}],
     {ok, {SupFlags, ChildSpecs}}.
 %% internal functions

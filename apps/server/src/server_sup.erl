@@ -29,7 +29,7 @@ init(Args) ->
           period => 5},
     ChildSpecs =
         [#{id => acceptor,
-           start => {acceptor, start, Args},
+           start => {acceptor, init, Args},
            shutdown => brutal_kill}],
     {ok, {SupFlags, ChildSpecs}}.
 

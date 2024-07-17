@@ -22,47 +22,30 @@ Run
 
 ### Client
 
-    $ cd _build/prod/rel/client
-    $ bin/client cnosole
+    $ ADDR=\"127.0.0.1\" PORT=8388 LOCAL_PORT=1080 PASSWORD=\"!barfoo\" METHOD=chacha20_poly1305 _build/default/rel/client/bin/client foreground          
 
 ### Server
 
-    $ cd _build/prod/rel/server
-    $ bin/server cnosole
-
-### with custom configuration:
-    
-    $ erl -boot releases/0.1.0/start -config releases/0.1.0/sys    
-
+    $ PORT=8388 PASSWORD=\"!barfoo\" METHOD=chacha20_poly1305 _build/default/rel/server/bin/server foreground    
 
 Configuration
 -------------
-### Server:
 
-port: Listening Port
-
-password: Password used to derivate session key
-
-method: cipher method
+Config by environment variable.
 
 ### Client:
 
-password & method: same as Server configuration
+* ADDR: remote address
+* PORT: remote port
+* LOCAL_PORT: local port of socks5 server
+* PASSWORD: password
+* METHOD: encryption method, in [aes_128_gcm, aes_256_gcm, chacha20_poly1305].
 
-address: remote address
+### Server:
 
-port: remote port
+* PORT: port
+* PASSWORD: password
+* METHOD: encryption method, in [aes_128_gcm, aes_256_gcm, chacha20_poly1305].
 
-local_port: local port of socks5 server
-
-### Example
-config/sys.config
-```
-[
-  {server,[{port,8388},{password,"barfoo!"},{method,chacha20_poly1305}]},
-  {client,[{address,{127,0,0,1}},{port,8388},{local_port,1080},{password,"barfoo!"},{method,chacha20_poly1305}]}
-].
-
-```
 
 

@@ -4,17 +4,12 @@
 
 -include_lib("kernel/include/logger.hrl").
 
--record(init,
-        {cipher :: ciphers(), master_key :: binary(), key_size :: non_neg_integer()}).
--record(chunk, {cipher :: ciphers(), sub_key :: binary(), nonce :: binary()}).
--record(payload,
-        {cipher :: ciphers(),
-         sub_key :: binary(),
-         nonce :: binary(),
-         length :: non_neg_integer()}).
+-record(init, {cipher, master_key, key_size}).
+-record(chunk, {cipher, sub_key, nonce}).
+-record(payload, {cipher, sub_key, nonce, length}).
 
 -type ciphers() :: aes_128_gcm | aes_256_gcm | chacha20_poly1305.
--type state() :: #init{} | #chunk{}.
+-type state() :: #init{} | #chunk{} | #payload{}.
 
 -export_type([state/0, ciphers/0]).
 
@@ -33,14 +28,13 @@
 -spec init(Cipher, Pass) -> State
     when Cipher :: ciphers(),
          Pass :: string(),
-         State :: #init{}.
+         State :: state().
 init(Cipher, Pass) ->
     case ?KEY_SIZE of
         #{Cipher := Len} ->
-            Key = derive_key(Pass, Len),
-            {init, Cipher, Key, Len};
+            {init, Cipher, derive_key(Pass, Len), Len};
         #{} ->
-            ?LOG_ERROR("cipher: ~p not supported", [Cipher]),
+            ?LOG_ERROR("cipher: ~p is not supported", [Cipher]),
             exit(normal)
     end.
 
@@ -57,7 +51,7 @@ encrypt({init, Cipher, MasterKey, KeySize}, Input, []) ->
     Salt = crypto:strong_rand_bytes(KeySize),     % key size = salt size
     SubKey = hkdf_sha1(MasterKey, Salt, KeySize),
     encrypt({chunk, Cipher, SubKey, ?ZERO}, Input, [Salt]);
-encrypt({chunk, Cipher, SubKey, Nonce} = State, Input, Acc) ->
+encrypt({chunk, Cipher, SubKey, Nonce}, Input, Acc) ->
     Size = byte_size(Input) band ?MAX_SIZE,      % max size 0x3FFF
     {Cur, Rest} = split_binary(Input, Size),
     SizeBin = <<Size:?LENGTH_SIZE/unit:8>>,
@@ -66,7 +60,7 @@ encrypt({chunk, Cipher, SubKey, Nonce} = State, Input, Acc) ->
     {Payload, PayloadTag} =
         crypto:crypto_one_time_aead(Cipher, SubKey, inc(Nonce), Cur, <<>>, true),
     Bcc = [PayloadTag, Payload, LengthTag, Length] ++ Acc,      %concat from backward
-    encrypt(State#chunk{nonce = iinc(Nonce)}, Rest, Bcc).
+    encrypt({chunk, Cipher, SubKey, iinc(Nonce)}, Rest, Bcc).
 
 -spec decrypt(State, Input) -> Result
     when State :: state(),
@@ -124,7 +118,7 @@ derive_key(Pass, Pre, _) ->
          Len :: non_neg_integer(),
          SubKey :: binary().
 hkdf_sha1(Key, Salt, Len) ->
-    expand(crypto:mac(hmac, sha, Salt, Key), <<>>, 1, Len). 
+    expand(crypto:mac(hmac, sha, Salt, Key), <<>>, 1, Len).
 
 expand(Prk, Pre, I, Len) when Len > 16 ->
     Cur = crypto:mac(hmac, sha, Prk, <<Pre/binary, ?INFO, I>>),

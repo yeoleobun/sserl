@@ -1,6 +1,7 @@
 -module(socks5_server).
 
--export([start/5]).
+-export([init/5, process/4]).
+
 -include_lib("kernel/include/logger.hrl").
 
 -define(SOCK_OPTS,
@@ -11,51 +12,30 @@
          {nodelay, true},
          {active, false}]).
 
--spec start(Method, Password, LocalPort, RemoteAddr, RemotePort) -> Result
-    when Method :: cipher:ciphers(),
-         Password :: string(),
-         LocalPort :: inet:port_number(),
-         RemoteAddr :: inet:socket_address() | inet:hostname(),
-         RemotePort :: inet:port_number(),
-         Result :: ok.
-start(Method, Password, LocalPort, RemoteAddr, RemotePort) ->
-    Init = cipher:init(Method, Password),
-    ?LOG_DEBUG("listening on ~w~n",[LocalPort]),
+init(Method, Password, LocalPort, RemoteAddr, RemotePort) ->
+    Ctx = cipher:init(Method, Password),
     {ok, Listen} = gen_tcp:listen(LocalPort, ?SOCK_OPTS),
-    accept(Listen, Init, RemoteAddr, RemotePort).
+    loop(Listen, Ctx, RemoteAddr, RemotePort).
 
--spec accept(ListenSock, Init, RemoteAddr, RemotePort) -> Result
-    when ListenSock :: inet:socket(),
-         Init :: cipher:state(),
-         RemoteAddr :: inet:socket_address() | inet:hostname(),
-         RemotePort :: inet:port_number(),
-         Result :: no_return().
-accept(ListenSock, Init, RemoteAddr, RemotePort) ->
+loop(ListenSock, Ctx, RemoteAddr, RemotePort) ->
     {ok, Client} = gen_tcp:accept(ListenSock),
-    Pid = spawn(fun() -> handshake(Client, Init, RemoteAddr, RemotePort) end),
+    Pid = spawn(?MODULE, process, [Client, Ctx, RemoteAddr, RemotePort]),
     gen_tcp:controlling_process(Client, Pid),
-    accept(ListenSock, Init, RemoteAddr, RemotePort).
+    loop(ListenSock, Ctx, RemoteAddr, RemotePort).
 
--spec handshake(Client, Init, RemoteAddr, RemotePort) -> Result
-    when Client :: inet:socket(),
-         Init :: cipher:state(),
-         RemoteAddr :: inet:socket_address() | inet:hostname(),
-         RemotePort :: inet:port_number(),
-         Result :: ok.
-handshake(Client, Init, RemoteAddr, RemotePort) ->
+process(Client, Ctx, RemoteAddr, RemotePort) ->
     {ok, <<5, N:8, _:N/binary>>} = gen_tcp:recv(Client, 0),  % ignore method selection
     ok = gen_tcp:send(Client, <<5, 0>>),                     % no authentication required
     {ok, <<5, 1, 0, Dst/binary>>} = gen_tcp:recv(Client, 0), % CONNECT only
     ok = gen_tcp:send(Client, <<5, 0, 0, Dst/binary>>),      % always succeeded, use DST.ADDR
-    {Addr,Port,<<>>} = common:parse_address(Dst),
+    {Addr, _Port, <<>>} = common:parse_address(Dst),
+    ?LOG_DEBUG("connecting: ~s", [Addr]),
     {ok, Payload} = gen_tcp:recv(Client, 0),
-    case gen_tcp:connect(RemoteAddr, RemotePort, ?SOCK_OPTS, timer:seconds(2)) of
-        {ok,Remote} ->
-            ?LOG_DEBUG(#{addr => Addr,port => Port}),
-            {Packet, State} = cipher:encrypt(Init, <<Dst/binary, Payload/binary>>),
+    case gen_tcp:connect(RemoteAddr, RemotePort, ?SOCK_OPTS, timer:seconds(3)) of
+        {ok, Remote} ->
+            {Packet, State} = cipher:encrypt(Ctx, <<Dst/binary, Payload/binary>>),
             ok = gen_tcp:send(Remote, Packet),
-            common:relay(Init, Remote, State, Client);
-        {error,Reason} ->
-            ?LOG_ERROR("remote is not reachable ~w~n",[Reason]),
-            error
+            common:relay(Ctx, Remote, State, Client);
+        {error, Reason} ->
+            ?LOG_DEBUG("remote unreachable, reason: ~w", [Reason])
     end.

@@ -1,6 +1,6 @@
--sname sserl
+-sname ss-server
 
 -setcookie sserl_cookie
 
 +K true
-+A30
++A5

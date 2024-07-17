@@ -3,10 +3,7 @@
   {vsn, "0.1.0"},
   {registered, []},
   {applications,
-   [kernel,
-    stdlib,
-    crypto
-  ]},
+   [kernel,stdlib,crypto]},
   {env,[]},
   {modules, [common,cipher]},
   {licenses, ["Apache-2.0"]},

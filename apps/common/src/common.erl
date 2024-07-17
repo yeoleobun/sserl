@@ -13,13 +13,6 @@
 relay(DecState, DecSock, EncState, EncSock) ->
     relay(DecState, DecSock, <<>>, EncState, EncSock).
 
--spec relay(DecState, DecSock, DecBuff, EncState, EncSock) -> Result
-    when DecState :: cipher:state(),
-         EncState :: cipher:state(),
-         DecSock :: inet:socket(),
-         EncSock :: inet:socket(),
-         DecBuff :: binary(),
-         Result :: ok.
 relay(DecState, DecSock, DecBuff, EncState, EncSock) ->
     inet:setopts(DecSock, [{active, once}]),
     inet:setopts(EncSock, [{active, once}]),
@@ -45,15 +38,13 @@ relay(DecState, DecSock, DecBuff, EncState, EncSock) ->
          Rest :: binary(),
          Addr :: inet:ip_address() | inet:hostname(),
          Port :: inet:port_number(),
-         Output :: {Addr, Port, Rest} | continue.
+         Output :: {Addr, Port, Rest}.
 parse_address(<<1, A, B, C, D, Port:16, Rest/binary>>) ->
     {{A, B, C, D}, Port, Rest};
 parse_address(<<3, Len, Host:Len/binary, Port:16, Rest/binary>>) ->
     {binary_to_list(Host), Port, Rest};
 parse_address(<<4,A:16,B:16,C:16,D:16,E:16,F:16,G:16,H:16,Port:16,Rest/binary>>) ->
-    {{A, B, C, D, E, F, G, H}, Port, Rest};
-parse_address(_) ->
-    continue.
+    {{A, B, C, D, E, F, G, H}, Port, Rest}.
 
 -spec address_to_binary(Addr, Port) -> Result
     when Addr :: inet:ip_address() | inet:hostname(),
