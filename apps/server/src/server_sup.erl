@@ -28,8 +28,8 @@ init(Args) ->
           intensity => 1,
           period => 5},
     ChildSpecs =
-        [#{id => acceptor,
-           start => {acceptor, init, Args},
+        [#{id => server,
+           start => {server, init, Args},
            shutdown => brutal_kill}],
     {ok, {SupFlags, ChildSpecs}}.
 

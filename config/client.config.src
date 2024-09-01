@@ -8,9 +8,9 @@
                         legacy_header => false,
                         single_line => true}}}}]}]},
     {client,[
-        {address, ${ADDR:-localhost}},
-        {port, ${PORT:-8388}},
-        {local_port, ${LOCAL_PORT:-1080}},
-        {password, ${PASSWORD:-"barfoo!"}},
-        {method, ${METHOD:-chacha20_poly1305}}]}].
+        {address, ${ADDR}},
+        {port, ${PORT}},
+        {local_port, ${LOCAL_PORT}},
+        {password, ${PASSWORD}},
+        {method, ${METHOD}}]}].
   

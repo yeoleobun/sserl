@@ -7,10 +7,8 @@
                     {logger_formatter, #{
                         legacy_header => false,
                         single_line => true}}}}]}]},
-    {server,
-        [
-            {port, ${PORT:-8388}},
-            {password, ${PASSWORD:-"barfoo!"}},
-            {method, ${METHOD:-chacha20_poly1305}}
-        ]}  
+    {server,[
+        {port, ${PORT}},
+        {password, ${PASSWORD}},
+        {method, ${METHOD}}]}  
 ].

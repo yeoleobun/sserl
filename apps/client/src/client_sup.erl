@@ -30,8 +30,8 @@ init(Args) ->
           intensity => 1,
           period => 5},
     ChildSpecs =
-        [#{id => acceptor,
-           start => {socks5_server, init, Args},
+        [#{id => client,
+           start => {client, init, Args},
            shutdown => brutal_kill}],
     {ok, {SupFlags, ChildSpecs}}.
 %% internal functions
